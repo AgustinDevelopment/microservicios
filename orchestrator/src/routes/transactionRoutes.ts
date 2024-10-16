@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { executeTransaction } from '../controllers/transactionController';
+import { realizarTransaccion } from '../controllers/transactionController';
 
 const router = Router();
-router.post('/transaccion', executeTransaction);
+router.post('/transaction', realizarTransaccion);
 
 export default router;

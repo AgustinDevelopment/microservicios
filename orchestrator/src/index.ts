@@ -1,11 +1,8 @@
-import express from 'express';
-import router from './routes/transactionRoutes';
+import server from "./server";
+import colors from 'colors'
 
-const app = express();
-app.use(express.json());
-app.use('/api', router);
+const port = process.env.PORT || 4004
 
-const PORT = 4004;
-app.listen(PORT, () => {
-  console.log(`Orchestrator running on port ${PORT}`);
-});
+server.listen(port, () => {
+    console.log(colors.bgCyan(`REST API en el puesto ${port}`))
+})

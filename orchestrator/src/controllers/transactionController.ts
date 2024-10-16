@@ -1,48 +1,64 @@
 import { Request, Response } from 'express';
-import axios from 'axios';
+import sequelize from '../config/db';
 
-export const executeTransaction = async (req: Request, res: Response) => {
-  const { producto_id, medio_pago, cantidad, direccion_envio } = req.body;
+import Pago from '../../../ms-payments/src/models/Pago';
+import Stock from '../../../ms-inventario/src/models/Stock'
+import Compra from '../../../ms-compras/src/models/Compra';
+import Producto from '../../../ms-catalog/src/models/Producto'
+
+export const realizarTransaccion = async (req: Request, res: Response) => {
+  const { producto_id, direccion_envio, cantidad, medio_pago } = req.body;
+
+  const transaction = await sequelize.transaction(); // Inicia una transacción de Sequelize
 
   try {
-    // Paso 1: Obtener detalles del producto del ms-catalog
-    const productoResponse = await axios.get(`http://localhost:4000/api/products/productos/${producto_id}`);
-    const producto = productoResponse.data;
+      // 1. Verificar si el producto existe y está activado
+      const producto = await Producto.findOne({ where: { id: producto_id, activado: true } });
+      if (!producto) {
+          throw new Error('Producto no encontrado o inactivo');
+      }
 
-    // Paso 2: Realizar el pago a través del ms-pagos
-    const pagoResponse = await axios.post('http://localhost:4003/api/pagos', {
-      productoi_id: producto_id,
-      precio: producto.precio,
-      medio_pago: medio_pago,
-    });
-    const pago = pagoResponse.data;
+      // 2. Crear la compra
+      const compra = await Compra.create({
+          producto_id,
+          fecha_compra: new Date(),
+          direccion_envio,
+      }, { transaction });
 
-    // Paso 3: Actualizar el inventario en el ms-inventory
-    const stockResponse = await axios.post('http://localhost:4002/api/products/stock', {
-      producto_id: producto_id,
-      fecha_transaccion: new Date(),
-      cantidad: cantidad,
-      entrada_salida: 2, // salida de inventario
-    });
-    const stock = stockResponse.data;
+      // 3. Actualizar el inventario (restar la cantidad del stock)
+      const stockActual = await Stock.findOne({ where: { producto_id }, transaction });
+      if (!stockActual || stockActual.cantidad < cantidad) {
+          throw new Error('Stock insuficiente');
+      }
 
-    // Paso 4: Registrar la compra en el ms-compras
-    const compraResponse = await axios.post('http://localhost:4001/api/products/compra/create', {
-      producto_id: producto_id,
-      fecha_compra: new Date(),
-      direccion_envio: direccion_envio,
-    });
-    const compra = compraResponse.data;
+      await stockActual.update({
+          cantidad: stockActual.cantidad - cantidad,
+          fecha_transaccion: new Date(),
+          entrada_salida: 2, // Indica salida de stock
+      }, { transaction });
 
-    // Responder con los detalles de la transacción
-    res.status(201).json({
-      message: 'Transacción completada exitosamente',
-      producto,
-      pago,
-      stock,
-      compra,
-    });
+      // 4. Procesar el pago
+      const pago = await Pago.create({
+          producto_id,
+          precio: producto.precio * cantidad, // Total basado en cantidad
+          medio_pago,
+      }, { transaction });
+
+      // Confirma la transacción
+      await transaction.commit();
+
+      // 5. Responder con los detalles de la transacción
+      res.status(201).json({
+          message: 'Transacción realizada con éxito',
+          compra,
+          pago,
+          stock: stockActual,
+      });
   } catch (error) {
-    res.status(500).json({ error });
+      // En caso de error, se revierte la transacción
+      await transaction.rollback();
+      res.status(500).json({ error });
   }
 };
+
+
