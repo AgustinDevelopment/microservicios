@@ -18,7 +18,7 @@ export class CompraController {
 
         try {
             const compra = await Compra.create(req.body)
-            res.json(201).json(compra)
+            res.json(compra)
         } catch (error) {
             res.status(500).json({error: 'Error al crear la compra'})
         }

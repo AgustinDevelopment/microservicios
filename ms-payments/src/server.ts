@@ -44,7 +44,7 @@ server.use(express.json())
 
 // server.use(morgan('dev'))
 
-server.use('/api/products', router)
+server.use('/api', router)
 
 server.get('/api', (req, res) => {
     res.json({msg: 'Desde API'})
