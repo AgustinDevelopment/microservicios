@@ -1,11 +1,10 @@
 import { Request, Response } from 'express';
 import sequelize from '../config/db';
 
-
-import Producto from '../../../ms-catalog/src/models/Producto';
+import Pago from '../../../ms-payments/src/models/Pago';
+import Stock from '../../../ms-inventario/src/models/Stock'
 import Compra from '../../../ms-compras/src/models/Compra';
-import Stock from  '../../../ms-inventario/src/models/Stock';
-import Pago from '../../../ms-payments/src/models/Pago';	
+import Producto from '../../../ms-catalog/src/models/Producto'
 
 export const realizarTransaccion = async (req: Request, res: Response) => {
   const { producto_id, direccion_envio, cantidad, medio_pago } = req.body;
@@ -13,38 +12,52 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
   const transaction = await sequelize.transaction(); // Inicia una transacción de Sequelize
 
   try {
-    // 1. Verificar si el producto existe y está activado
-    const producto = await Producto.findByPk(producto_id);
-    if (!producto || !producto.activado) {
-      throw new Error('Producto no encontrado o inactivo');
-    }
+      // 1. Verificar si el producto existe y está activado
+      const producto = await Producto.findOne({ where: { id: producto_id, activado: true } });
+      if (!producto) {
+          throw new Error('Producto no encontrado o inactivo');
+      }
 
-    // 2. Realizar el pago
-    const pago = await Pago.create({
-      producto_id,
-      precio: producto.precio,
-      medio_pago,
-    }, { transaction });
+      // 2. Crear la compra
+      const compra = await Compra.create({
+          producto_id,
+          fecha_compra: new Date(),
+          direccion_envio,
+      }, { transaction });
 
-    // 3. Actualizar inventario
-    await Stock.create({
-      producto_id,
-      fecha_transaccion: new Date(),
-      cantidad,
-      entrada_salida: 2, // salida
-    }, { transaction });
+      // 3. Actualizar el inventario (restar la cantidad del stock)
+      const stockActual = await Stock.findOne({ where: { producto_id }, transaction });
+      if (!stockActual || stockActual.cantidad < cantidad) {
+          throw new Error('Stock insuficiente');
+      }
 
-    // 4. Crear la compra
-    const compra = await Compra.create({
-      producto_id,
-      fecha_compra: new Date(),
-      direccion_envio,
-    }, { transaction });
+      await stockActual.update({
+          cantidad: stockActual.cantidad - cantidad,
+          fecha_transaccion: new Date(),
+          entrada_salida: 2, // Indica salida de stock
+      }, { transaction });
 
-    await transaction.commit();
-    res.json({ producto, pago, compra });
+      // 4. Procesar el pago
+      const pago = await Pago.create({
+          producto_id,
+          precio: producto.precio * cantidad, // Total basado en cantidad
+          medio_pago,
+      }, { transaction });
+
+      // Confirma la transacción
+      await transaction.commit();
+
+      // 5. Responder con los detalles de la transacción
+      res.status(201).json({
+          message: 'Transacción realizada con éxito',
+          compra,
+          pago,
+          stock: stockActual,
+      });
   } catch (error) {
-    await transaction.rollback();
-    res.status(500).json({ error });
+      // En caso de error, se revierte la transacción
+      await transaction.rollback();
+      res.status(500).json({ error });
   }
 };
+

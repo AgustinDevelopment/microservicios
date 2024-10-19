@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import Producto from '../models/Producto';
 
+import Stock from '../../../ms-inventario/src/models/Stock'
+
 export class ProductController {
 
   static getProduct = async (req: Request, res: Response) => {
@@ -31,13 +33,20 @@ export class ProductController {
 
   static createProduct = async (req: Request, res: Response) => {
 
-    const { nombre, precio, activado } = req.body
+    const { nombre, precio, activado, cantidad_inicial } = req.body
 
     try {
       const newProduct = await Producto.create({
         nombre,
         precio,
         activado: activado ?? true
+      })
+
+      await Stock.create({
+        producto_id: newProduct.id,
+        fecha_transaccion: new Date(),
+        cantidad: cantidad_inicial,
+        entrada_salida: 1
       })
 
       res.status(201).json(newProduct)

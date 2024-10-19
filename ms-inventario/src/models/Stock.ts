@@ -31,7 +31,7 @@ Stock.init({
   entrada_salida: {
     type: DataTypes.INTEGER,
     allowNull: false,
-    defaultValue: 1, // Set an integer default value, e.g., 1 for "entrada"
+    defaultValue: 1, // Entrada (1) / Salida (2)
   },
 }, {
   sequelize,
