@@ -57,7 +57,6 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
   } catch (error) {
       // En caso de error, se revierte la transacción
       await transaction.rollback();
-      res.status(500).json({ error });
+      res.status(500).json({ error: (error as Error).message });
   }
 };
-
