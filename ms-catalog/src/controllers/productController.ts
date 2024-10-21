@@ -49,7 +49,7 @@ export class ProductController {
         entrada_salida: 1
       })
 
-      res.status(201).json(newProduct)
+      res.status(201).json({ message: 'Producto creado correctamente' , newProduct, cantidad_inicial})
     } catch (error) {
       res.status(500).json({error: 'Error al crear el producto'})
     }
