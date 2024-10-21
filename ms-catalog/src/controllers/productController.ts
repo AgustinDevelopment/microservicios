@@ -1,23 +1,20 @@
 import { Request, Response } from 'express';
+import axios from 'axios';
 import Producto from '../models/Producto';
-
-import Stock from '../../../ms-inventario/src/models/Stock'
+import sequelize from '../config/db';
 
 export class ProductController {
 
   static getProduct = async (req: Request, res: Response) => {
-
     try {
-        const products = await Producto.findAll()
-        res.json(products)
+      const products = await Producto.findAll();
+      res.json(products);
     } catch (error) {
-        res.status(500).json({error: 'Error al encontrar los productos'})
+      res.status(500).json({ error: 'Error al encontrar los productos' });
     }
-
   }
 
   static getProductById = async (req: Request, res: Response) => {
-
     const { id } = req.params;
     try {
       const producto = await Producto.findByPk(id);
@@ -28,36 +25,30 @@ export class ProductController {
     } catch (error) {
       res.status(500).json({ error: 'Error al obtener el producto' });
     }
-
   }
 
   static createProduct = async (req: Request, res: Response) => {
-
-    const { nombre, precio, activado, cantidad_inicial } = req.body
+    const { nombre, precio, activado, cantidad_inicial } = req.body;
+    const transaction = await sequelize.transaction();
 
     try {
+      // Crear el producto
       const newProduct = await Producto.create({
         nombre,
         precio,
         activado: activado ?? true
-      })
+      }, { transaction });
 
-      await Stock.create({
-        producto_id: newProduct.id,
-        fecha_transaccion: new Date(),
-        cantidad: cantidad_inicial,
-        entrada_salida: 1
-      })
+     
 
-      res.status(201).json({ message: 'Producto creado correctamente' , newProduct, cantidad_inicial})
+      await transaction.commit();
+      res.status(201).json(newProduct);
     } catch (error) {
-      res.status(500).json({error: 'Error al crear el producto'})
+      await transaction.rollback();
+      const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+      res.status(500).json({ error: errorMessage });
     }
-
   }
-
 }
 
-export default ProductController
-
-
+export default ProductController;
