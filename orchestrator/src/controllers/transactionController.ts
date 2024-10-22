@@ -1,62 +1,106 @@
 import { Request, Response } from 'express';
+import axios from 'axios';
 import sequelize from '../config/db';
 
-import Pago from '../../../ms-payments/src/models/Pago';
-import Stock from '../../../ms-inventario/src/models/Stock'
-import Compra from '../../../ms-compras/src/models/Compra';
-import Producto from '../../../ms-catalog/src/models/Producto'
-
 export const realizarTransaccion = async (req: Request, res: Response) => {
-  const { producto_id, direccion_envio, cantidad, medio_pago } = req.body;
+    const { producto_id, direccion_envio, cantidad, medio_pago } = req.body;
+    
+    const transaction = await sequelize.transaction();
 
-  const transaction = await sequelize.transaction(); // Inicia una transacción de Sequelize
-
-  try {
-      // 1. Verificar si el producto existe y está activado
-      const producto = await Producto.findOne({ where: { id: producto_id, activado: true } });
-      if (!producto) {
-          throw new Error('Producto no encontrado o inactivo');
+    try {
+        // 1. Verificar si el producto existe y está activado
+      const productoResponse = await axios.get(`http://localhost:4000/api/products/productos/${producto_id}`);
+      const producto = productoResponse.data;
+      if (!producto || !producto.activado) {
+        throw new Error('Producto no encontrado o inactivo');
       }
-
+  
       // 2. Crear la compra
-      const compra = await Compra.create({
-          producto_id,
-          fecha_compra: new Date(),
-          direccion_envio,
-      }, { transaction });
-
-      // 3. Actualizar el inventario (restar la cantidad del stock)
-      const stockActual = await Stock.findOne({ where: { producto_id }, transaction });
-      if (!stockActual || stockActual.cantidad < cantidad) {
-          throw new Error('Stock insuficiente');
-      }
-
-      await stockActual.update({
-          cantidad: stockActual.cantidad - cantidad,
-          fecha_transaccion: new Date(),
-          entrada_salida: 2, // Indica salida de stock
-      }, { transaction });
-
-      // 4. Procesar el pago
-      const pago = await Pago.create({
-          producto_id,
-          precio: producto.precio * cantidad, // Total basado en cantidad
-          medio_pago,
-      }, { transaction });
-
-      // Confirma la transacción
-      await transaction.commit();
-
-      // 5. Responder con los detalles de la transacción
-      res.status(201).json({
-          message: 'Transacción realizada con éxito',
-          compra,
-          pago,
-          stock: stockActual,
+      const compraResponse = await axios.post('http://localhost:4001/api/products/compra/create', {
+        producto_id,
+        fecha_compra: new Date(),
+        direccion_envio,
       });
-  } catch (error) {
-      // En caso de error, se revierte la transacción
-      await transaction.rollback();
-      res.status(500).json({ error: (error as Error).message });
-  }
-};
+      const compra = compraResponse.data;
+  
+      // 3. Actualizar el inventario (restar la cantidad del stock)
+      const stockResponse = await axios.get(`http://localhost:4002/api/products/stock/${producto_id}`);
+      const stockActual = stockResponse.data;
+      if (!stockActual || stockActual.cantidad < cantidad) {
+        throw new Error('Stock insuficiente');
+      }
+  
+      await axios.put(`http://localhost:4002/api/products/stock/${producto_id}`, {
+        cantidad: stockActual.cantidad - cantidad,
+        fecha_transaccion: new Date(),
+        entrada_salida: 2, // Indica salida de stock
+      });
+
+      // 4. Crear el registro de pago
+    const pagoResponse = await axios.post('http://localhost:4003/api/products/pagos/procesar', {
+        producto_id,
+        precio: producto.precio * cantidad,
+        medio_pago,
+      });
+      const pago = pagoResponse.data;
+  
+      await transaction.commit();
+      res.status(201).json({compra, pago});
+    } catch (error) {
+        
+    }
+}
+
+//   export const realizarTransaccion1 = async (req: Request, res: Response) => {
+//     const { producto_id, direccion_envio, cantidad, tipo_pago, datos_pago } = req.body;
+  
+//     const transaction = await sequelize.transaction(); // Inicia una transacción de Sequelize
+  
+//     try {
+//       // 1. Verificar si el producto existe y está activado
+//       const productoResponse = await axios.get(`http://localhost:4000/api/products/productos/${producto_id}`);
+//       const producto = productoResponse.data;
+//       if (!producto || !producto.activado) {
+//         throw new Error('Producto no encontrado o inactivo');
+//       }
+  
+//       // 2. Crear la compra
+//       const compraResponse = await axios.post('http://localhost:4001/api/products/compra/create', {
+//         producto_id,
+//         fecha_compra: new Date(),
+//         direccion_envio,
+//       });
+//       const compra = compraResponse.data;
+  
+//       // 3. Actualizar el inventario (restar la cantidad del stock)
+//       const stockResponse = await axios.get(`http://localhost:4002/api/products/stock/${producto_id}`);
+//       const stockActual = stockResponse.data;
+//       if (!stockActual || stockActual.cantidad < cantidad) {
+//         throw new Error('Stock insuficiente');
+//       }
+  
+//       await axios.put(`http://localhost:4002/api/products/stock/${producto_id}`, {
+//         cantidad: stockActual.cantidad - cantidad,
+//         fecha_transaccion: new Date(),
+//         entrada_salida: 2, // Indica salida de stock
+//       });
+  
+//       // 4. Verificar y procesar el pago
+//       await procesarPago(tipo_pago, datos_pago);
+
+//       // 5. Crear el registro de pago
+//     const pagoResponse = await axios.post('http://localhost:4003/api/products/pagos/procesar', {
+//         producto_id,
+//         precio: producto.precio * cantidad,
+//         medio_pago: tipo_pago,
+//       });
+//       const pago = pagoResponse.data;
+  
+//       await transaction.commit();
+//       res.status(201).json({compra, pago});
+//     } catch (error) {
+//       await transaction.rollback();
+//       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+//       res.status(500).json({ error: errorMessage });
+//     }
+//   };
