@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import axios from 'axios';
 import Producto from '../models/Producto';
 import sequelize from '../config/db';
+import { Transaction } from 'sequelize';
 
 export class ProductController {
 
@@ -28,10 +29,17 @@ export class ProductController {
   }
 
   static createProduct = async (req: Request, res: Response) => {
-    const { nombre, precio, activado, cantidad_inicial } = req.body;
-    const transaction = await sequelize.transaction();
+    const { nombre, precio, activado } = req.body;
+    const transaction = await sequelize.transaction({
+      isolationLevel: Transaction.ISOLATION_LEVELS.REPEATABLE_READ // Isolation
+    });
 
     try {
+      // Consistency
+      if (!nombre || !precio) {
+        throw new Error('Nombre y precio son requeridos');
+      }
+
       // Crear el producto
       const newProduct = await Producto.create({
         nombre,
@@ -39,12 +47,10 @@ export class ProductController {
         activado: activado ?? true
       }, { transaction });
 
-     
-
-      await transaction.commit();
+      await transaction.commit(); // Atomicity
       res.status(201).json(newProduct);
     } catch (error) {
-      await transaction.rollback();
+      await transaction.rollback(); // Atomicity
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
       res.status(500).json({ error: errorMessage });
     }
