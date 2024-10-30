@@ -5,12 +5,12 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
-    "dev:catalog":"nodemon --exec ts-node ./ms-catalog/index.ts",
+    "dev:catalog": "nodemon --exec ts-node ./ms-catalog/index.ts",
     "build": "tsc",
     "test": "jest --detectOpenHandles",
     "test:coverage": "npm run pretest && jest --detectOpenHandles --coverage",
     "pretest": "ts-node ./src/data --clear",
-    "start" : "node dist/index.js"
+    "start": "node dist/index.js"
   },
   "author": "agusalanis.dev@gmail.com",
   "license": "ISC",
@@ -28,6 +28,7 @@
     "typescript": "^5.5.2"
   },
   "dependencies": {
+    "axios": "^1.7.7",
     "colors": "^1.4.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
