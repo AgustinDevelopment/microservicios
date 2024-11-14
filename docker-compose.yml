@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  ms-catalog:
+    build: ./ms-catalog
+    ports:
+      - "4000:4000"
+    env_file:
+      - ./ms-catalog/.env
+    depends_on:
+      - db
+
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: microservicios_new
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
