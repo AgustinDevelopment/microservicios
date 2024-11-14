@@ -28,3 +28,16 @@ export const updateStock = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Error al actualizar el stock' });
   }
 };
+
+export const checkInventory = async (req: Request, res: Response) => {
+  const { producto_id } = req.params;
+  try {
+    const stock = await Stock.findOne({ where: { producto_id } });
+    if (!stock) {
+      return res.status(404).json({ error: 'Stock no encontrado' });
+    }
+    res.json({ producto_id, cantidad: stock.cantidad });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al chequear el inventario' });
+  }
+};
