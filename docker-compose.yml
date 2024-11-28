@@ -1,8 +1,10 @@
 version: '3.8'
 
 services:
+  # Microservicio Catálogo (ms-catalog)
   ms-catalog:
-    build: ./ms-catalog
+    build:
+      context: ./ms-catalog
     ports:
       - "4000:4000"
     env_file:
@@ -10,6 +12,50 @@ services:
     depends_on:
       - db
 
+  # Microservicio Compras (ms-compras)
+  ms-compras:
+    build:
+      context: ./ms-compras
+    ports:
+      - "4001:4001"
+    env_file:
+      - ./ms-compras/.env
+    depends_on:
+      - db
+
+  # Microservicio Inventario (ms-inventario)
+  ms-inventario:
+    build:
+      context: ./ms-inventario
+    ports:
+      - "4002:4002"
+    env_file:
+      - ./ms-inventario/.env
+    depends_on:
+      - db
+
+  # Microservicio Pagos (ms-payments)
+  ms-payments:
+    build:
+      context: ./ms-payments
+    ports:
+      - "4003:4003"
+    env_file:
+      - ./ms-payments/.env
+    depends_on:
+      - db
+
+  orchestrator:
+    build:
+      context: ./orchestrator
+    ports:
+      - "4004:4004"
+    env_file:
+      - ./orchestrator/.env
+    depends_on:
+      - db
+
+  # Base de datos PostgreSQL
   db:
     image: postgres:13
     environment:
@@ -17,7 +63,7 @@ services:
       POSTGRES_PASSWORD: root
       POSTGRES_DB: microservicios_new
     ports:
-      - "5432:5432"
+      - "5434:5434"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
