@@ -41,3 +41,14 @@ export const checkInventory = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Error al chequear el inventario' });
   }
 };
+
+// crea un metodo para crear un stock
+export const createInventory = async (req: Request, res: Response) => {
+  const { producto_id, cantidad, fecha_transaccion, entrada_salida } = req.body;
+  try {
+    const stock = await Stock.create({ producto_id, cantidad, fecha_transaccion, entrada_salida });
+    res.json(stock);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear el stock' });
+  }
+}
