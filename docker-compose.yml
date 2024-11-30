@@ -54,11 +54,6 @@ services:
       - ./orchestrator/.env
     depends_on:
       - db
-  
-  redis:
-    image: redis:latest
-    ports:
-      - "6379:6379"
 
   # Base de datos PostgreSQL
   db:
