@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import Stock from '../models/Stock';
+import { createCircuitBreaker } from '../utils/circuitBreaker';
 
 export const getStockByProductId = async (req: Request, res: Response) => {
   const { producto_id } = req.params;
@@ -17,15 +18,24 @@ export const getStockByProductId = async (req: Request, res: Response) => {
 export const updateStock = async (req: Request, res: Response) => {
   const { producto_id } = req.params;
   const { cantidad, fecha_transaccion, entrada_salida } = req.body;
-  try {
+
+  const updateStockAction = async () => {
     const stock = await Stock.findOne({ where: { producto_id } });
     if (!stock) {
-      return res.status(404).json({ error: 'Stock no encontrado' });
+      throw new Error('Stock no encontrado');
     }
     await stock.update({ cantidad, fecha_transaccion, entrada_salida });
-    res.json(stock);
+    return stock;
+  };
+
+  const breaker = createCircuitBreaker(updateStockAction);
+
+  try {
+    const updatedStock = await breaker.fire();
+    res.json(updatedStock);
   } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar el stock' });
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    res.status(500).json({ error: errorMessage });
   }
 };
 
@@ -42,13 +52,21 @@ export const checkInventory = async (req: Request, res: Response) => {
   }
 };
 
-// crea un metodo para crear un stock
 export const createInventory = async (req: Request, res: Response) => {
   const { producto_id, cantidad, fecha_transaccion, entrada_salida } = req.body;
-  try {
+
+  const createInventoryAction = async () => {
     const stock = await Stock.create({ producto_id, cantidad, fecha_transaccion, entrada_salida });
-    res.json(stock);
+    return stock;
+  };
+
+  const breaker = createCircuitBreaker(createInventoryAction);
+
+  try {
+    const newStock = await breaker.fire();
+    res.json(newStock);
   } catch (error) {
-    res.status(500).json({ error: 'Error al crear el stock' });
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    res.status(500).json({ error: errorMessage });
   }
-}
+};

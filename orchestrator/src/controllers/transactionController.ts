@@ -1,13 +1,18 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
+import axiosRetry from 'axios-retry';
 import sequelize from '../config/db';
+import { createCircuitBreaker } from '../utils/circuitBreaker';
+
+// Configurar reintentos automáticos para axios
+axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 export const realizarTransaccion = async (req: Request, res: Response) => {
   const { producto_id, direccion_envio, cantidad, medio_pago } = req.body;
   
   const transaction = await sequelize.transaction();
 
-  try {
+  const realizarTransaccionAction = async () => {
     // 1. Verificar si el producto existe y está activado
     const productoResponse = await axios.get(`http://localhost:4000/api/products/productos/${producto_id}`);
     const producto = productoResponse.data;
@@ -25,7 +30,7 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
       direccion_envio,
     });
     const compra = compraResponse.data;
-  
+
     // 3. Actualizar el inventario (restar la cantidad del stock)
     const stockResponse = await axios.get(`http://localhost:4002/api/products/stock/${producto_id}`);
     const stockActual = stockResponse.data;
@@ -46,12 +51,19 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
       medio_pago,
     });
     const pago = pagoResponse.data;
-  
+
     await transaction.commit();
-    res.status(201).json({compra, pago});
+    return { compra, pago };
+  };
+
+  const breaker = createCircuitBreaker(realizarTransaccionAction);
+
+  try {
+    const result = await breaker.fire();
+    res.status(201).json(result);
   } catch (error) {
     await transaction.rollback();
     const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
     res.status(500).json({ error: errorMessage });
   }
-}
+};
