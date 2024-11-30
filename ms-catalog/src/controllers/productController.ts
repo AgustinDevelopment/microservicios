@@ -3,12 +3,21 @@ import axios from 'axios';
 import Producto from '../models/Producto';
 import sequelize from '../config/db';
 import { Transaction } from 'sequelize';
+import redis from '../config/redis';
 
 export class ProductController {
 
   static getProduct = async (req: Request, res: Response) => {
     try {
+      const cacheKey = 'all_products';
+      const cachedProducts = await redis.get(cacheKey);
+
+      if (cachedProducts) {
+        return res.json(JSON.parse(cachedProducts));
+      }
+
       const products = await Producto.findAll();
+      await redis.set(cacheKey, JSON.stringify(products), 'EX', 3600); // Cache por 1 hora
       res.json(products);
     } catch (error) {
       res.status(500).json({ error: 'Error al encontrar los productos' });
