@@ -1,10 +1,6 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
-import axiosRetry from 'axios-retry';
 import sequelize from '../config/db';
-
-// Configurar reintentos automáticos para axios
-axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 export const realizarTransaccion = async (req: Request, res: Response) => {
   const { producto_id, direccion_envio, cantidad, medio_pago } = req.body;
@@ -29,7 +25,7 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
       direccion_envio,
     });
     const compra = compraResponse.data;
-
+  
     // 3. Actualizar el inventario (restar la cantidad del stock)
     const stockResponse = await axios.get(`http://localhost:4002/api/products/stock/${producto_id}`);
     const stockActual = stockResponse.data;
@@ -58,4 +54,4 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
     const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
     res.status(500).json({ error: errorMessage });
   }
-};
+}
