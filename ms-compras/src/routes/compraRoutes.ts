@@ -5,6 +5,7 @@ const router = Router()
 
 router.get('/compras', CompraController.getAllCompras)
 router.post('/compra/create', CompraController.createCompra)
+router.delete('/compra/rollback', CompraController.revertCompra)
 
 export default router
 

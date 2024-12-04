@@ -4,17 +4,23 @@ import axiosRetry from 'axios-retry';
 import sequelize from '../config/db';
 import { createCircuitBreaker } from '../utils/circuitBreaker';
 
+const MS_CATALOG = process.env.MS_CATALOG || 'http://localhost:4000';
+const MS_COMPRAS = process.env.MS_COMPRAS || 'http://localhost:4001';
+const MS_INVENTARIO = process.env.MS_INVENTARIO || 'http://localhost:4002';
+const MS_PAYMENTS = process.env.MS_PAYMENTS || 'http://localhost:4003';
+
 // Configurar reintentos automáticos para axios
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 export const realizarTransaccion = async (req: Request, res: Response) => {
+
   const { producto_id, direccion_envio, cantidad, medio_pago } = req.body;
   
   const transaction = await sequelize.transaction();
 
   const realizarTransaccionAction = async () => {
     // 1. Verificar si el producto existe y está activado
-    const productoResponse = await axios.get(`http://localhost:4000/api/products/productos/${producto_id}`);
+    const productoResponse = await axios.get(`${MS_CATALOG}/api/products/productos/${producto_id}`);
     const producto = productoResponse.data;
     if (!producto) {
       throw new Error('Producto no encontrado');
@@ -24,7 +30,7 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
     }
   
     // 2. Crear la compra
-    const compraResponse = await axios.post('http://localhost:4001/api/products/compra/create', {
+    const compraResponse = await axios.post(`${MS_COMPRAS}/api/products/compra/create`, {
       producto_id,
       fecha_compra: new Date(),
       direccion_envio,
@@ -32,20 +38,20 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
     const compra = compraResponse.data;
 
     // 3. Actualizar el inventario (restar la cantidad del stock)
-    const stockResponse = await axios.get(`http://localhost:4002/api/products/stock/${producto_id}`);
+    const stockResponse = await axios.get(`${MS_INVENTARIO}/api/products/stock/${producto_id}`);
     const stockActual = stockResponse.data;
     if (!stockActual || stockActual.cantidad < cantidad) {
       throw new Error('Stock insuficiente');
     }
   
-    await axios.put(`http://localhost:4002/api/products/stock/${producto_id}`, {
+    await axios.put(`${MS_INVENTARIO}/api/products/stock/${producto_id}`, {
       cantidad: stockActual.cantidad - cantidad,
       fecha_transaccion: new Date(),
       entrada_salida: 2, // Indica salida de stock
     });
 
     // 4. Crear el registro de pago
-    const pagoResponse = await axios.post('http://localhost:4003/api/products/pagos/procesar', {
+    const pagoResponse = await axios.post(`${MS_PAYMENTS}/api/products/pagos/procesar`, {
       producto_id,
       precio: producto.precio * cantidad,
       medio_pago,

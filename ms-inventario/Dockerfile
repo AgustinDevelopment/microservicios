@@ -17,7 +17,7 @@ RUN npm install -g nodemon
 COPY . .
 
 # Expone el puerto en el que la aplicación correrá
-EXPOSE 4001
+EXPOSE 4002
 
 # Define el comando para correr la aplicación
 CMD ["npm","run","dev"]
