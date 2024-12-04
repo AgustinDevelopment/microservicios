@@ -57,6 +57,10 @@ export const createInventory = async (req: Request, res: Response) => {
   const { producto_id, cantidad, fecha_transaccion, entrada_salida } = req.body;
 
   const createInventoryAction = async () => {
+    const existingStock = await Stock.findOne({ where: { producto_id } });
+    if (existingStock) {
+      throw new Error('Ya existe un inventario para este producto');
+    }
     const stock = await Stock.create({ producto_id, cantidad, fecha_transaccion, entrada_salida });
     return stock;
   };
