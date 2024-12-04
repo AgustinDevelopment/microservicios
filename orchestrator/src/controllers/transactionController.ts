@@ -1,25 +1,50 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
-import axiosRetry from 'axios-retry';
 import sequelize from '../config/db';
 import { createCircuitBreaker } from '../utils/circuitBreaker';
+import compensateSaga from '../services/compensations'; // Importación de las funciones de compensación
+import dotenv from 'dotenv';
 
-const MS_CATALOG = process.env.MS_CATALOG || 'http://localhost:4000';
-const MS_COMPRAS = process.env.MS_COMPRAS || 'http://localhost:4001';
-const MS_INVENTARIO = process.env.MS_INVENTARIO || 'http://localhost:4002';
-const MS_PAYMENTS = process.env.MS_PAYMENTS || 'http://localhost:4003';
+
+dotenv.config();
+
+const MS_CATALOG = process.env.MS_CATALOG || 'http://ms-catalog:4000';
+const MS_COMPRAS = process.env.MS_COMPRAS || 'http://ms-compras:4001';
+const MS_INVENTARIO = process.env.MS_INVENTARIO || 'http://ms-inventario:4002';
+const MS_PAYMENTS = process.env.MS_PAYMENTS || 'http://ms-payments:4003';
 
 // Configurar reintentos automáticos para axios
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
+const withRetries = async (action: () => Promise<any>, retries: number = 3): Promise<any> => {
+  let attempt = 0;
+  while (attempt < retries) {
+    try {
+      return await action();
+    } catch (error) {
+      attempt++;
+      console.error(`Intento ${attempt} fallido:`, error.message); // Registro del intento fallido
+      if (attempt >= retries) {
+        throw error; // Lanzar error si se superan los intentos
+      }
+    }
+  }
+};
+
 export const realizarTransaccion = async (req: Request, res: Response) => {
+  const transaction = await sequelize.transaction(); // Crear transacción para operaciones atómicas
+  let paymentId: number | undefined;
+  let purchaseId: number | undefined;
 
-  const { producto_id, direccion_envio, cantidad, medio_pago } = req.body;
-  
-  const transaction = await sequelize.transaction();
+  try {
+    const { producto_id, cantidad, medio_pago, direccion_envio } = req.body;
 
-  const realizarTransaccionAction = async () => {
-    // 1. Verificar si el producto existe y está activado
+    // Validar datos requeridos
+    if (!producto_id || !cantidad || !direccion_envio) {
+      return res.status(400).json({ message: 'Todos los campos son obligatorios' });
+    }
+
+    // Verificar si el producto existe y está activado
     const productoResponse = await axios.get(`${MS_CATALOG}/api/products/productos/${producto_id}`);
     const producto = productoResponse.data;
     if (!producto) {
@@ -28,48 +53,64 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
     if (!producto.activado) {
       throw new Error('Producto inactivo');
     }
-  
-    // 2. Crear la compra
+
+    // Verificar el stock antes de crear la compra
+    const stockResponse = await axios.get(`${MS_INVENTARIO}/api/products/stock/${producto_id}`);
+    const stockActual = stockResponse.data;
+    if (!stockActual || stockActual.cantidad < cantidad) {
+      throw new Error('Stock insuficiente');
+    }
+
+    // Crear la compra
     const compraResponse = await axios.post(`${MS_COMPRAS}/api/products/compra/create`, {
       producto_id,
       fecha_compra: new Date(),
       direccion_envio,
     });
     const compra = compraResponse.data;
+    purchaseId = compra.id; // Guardar ID de la compra
 
-    // 3. Actualizar el inventario (restar la cantidad del stock)
-    const stockResponse = await axios.get(`${MS_INVENTARIO}/api/products/stock/${producto_id}`);
-    const stockActual = stockResponse.data;
-    if (!stockActual || stockActual.cantidad < cantidad) {
-      throw new Error('Stock insuficiente');
-    }
-  
+    // Actualizar el inventario (restar la cantidad del stock)
     await axios.put(`${MS_INVENTARIO}/api/products/stock/${producto_id}`, {
       cantidad: stockActual.cantidad - cantidad,
       fecha_transaccion: new Date(),
       entrada_salida: 2, // Indica salida de stock
     });
 
-    // 4. Crear el registro de pago
+    // Crear el registro de pago
     const pagoResponse = await axios.post(`${MS_PAYMENTS}/api/products/pagos/procesar`, {
       producto_id,
       precio: producto.precio * cantidad,
       medio_pago,
     });
     const pago = pagoResponse.data;
+    paymentId = pago.id; // Guardar ID del pago
 
-    await transaction.commit();
-    return { compra, pago };
-  };
+    await transaction.commit(); // Confirmar transacción
 
-  const breaker = createCircuitBreaker(realizarTransaccionAction);
-
-  try {
-    const result = await breaker.fire();
-    res.status(201).json(result);
+    res.status(201).json({ compra, pago });
   } catch (error) {
-    await transaction.rollback();
-    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-    res.status(500).json({ error: errorMessage });
+    console.error('Error al realizar la transacción:', error.message);
+
+    // Revertir el pago si ya se procesó
+    if (paymentId) {
+      try {
+        await compensateSaga(paymentId, 0, req.body.producto_id, req.body.cantidad);
+      } catch (compensateError) {
+        console.error('Error al revertir el pago:', compensateError.message);
+      }
+    }
+
+    // Revertir la compra si ya se creó
+    if (purchaseId) {
+      try {
+        await compensateSaga(0, purchaseId, req.body.producto_id, req.body.cantidad);
+      } catch (compensateError) {
+        console.error('Error al revertir la compra:', compensateError.message);
+      }
+    }
+
+    await transaction.rollback(); // Revertir transacción si ocurre un error
+    res.status(500).json({ message: 'No se pudo realizar la compra' });
   }
 };
