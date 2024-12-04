@@ -9,7 +9,18 @@ export class ProductController {
 
   static getProduct = async (req: Request, res: Response) => {
     try {
+      const cacheKey = 'productos';
+      const cachedProducts = await redisClient.get(cacheKey);
+
+      if (cachedProducts) {
+        return res.json(JSON.parse(cachedProducts));
+      }
+
       const products = await Producto.findAll();
+      await redisClient.set(cacheKey, JSON.stringify(products), {
+        EX: 3600 // Expira en 1 hora
+      });
+
       res.json(products);
     } catch (error) {
       res.status(500).json({ error: 'Error al encontrar los productos' });

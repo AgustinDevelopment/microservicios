@@ -1,10 +1,14 @@
-import { Sequelize } from 'sequelize';
-import dotenv from 'dotenv'
+import { createClient } from 'redis';
+import dotenv from 'dotenv';
 
-dotenv.config()
+dotenv.config();
 
-const sequelize = new Sequelize(process.env.DATABASE_URL!, {
-  logging: false, 
+const client = createClient({
+  url: process.env.REDIS_URL || 'redis://localhost:6379'
 });
 
-export default sequelize;
+client.on('error', (err) => console.log('Redis Client Error', err));
+
+client.connect();
+
+export default client;

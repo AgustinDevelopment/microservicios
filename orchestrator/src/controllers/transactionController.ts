@@ -1,8 +1,9 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
 import sequelize from '../config/db';
+import axiosRetry from 'axios-retry';
 import { createCircuitBreaker } from '../utils/circuitBreaker';
-import compensateSaga from '../services/compensations'; // Importación de las funciones de compensación
+import compensateSaga from '../utils/compensateSaga'; // Importación de las funciones de compensación
 import dotenv from 'dotenv';
 
 
@@ -23,7 +24,8 @@ const withRetries = async (action: () => Promise<any>, retries: number = 3): Pro
       return await action();
     } catch (error) {
       attempt++;
-      console.error(`Intento ${attempt} fallido:`, error.message); // Registro del intento fallido
+      const errorMessage = (error as any).message;
+      console.error(`Intento ${attempt} fallido:`, errorMessage); // Registro del intento fallido
       if (attempt >= retries) {
         throw error; // Lanzar error si se superan los intentos
       }
@@ -90,14 +92,22 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
 
     res.status(201).json({ compra, pago });
   } catch (error) {
-    console.error('Error al realizar la transacción:', error.message);
+    if (error instanceof Error) {
+      console.error('Error al realizar la transacción:', error.message);
+    } else {
+      console.error('Error al realizar la transacción:', error);
+    }
 
     // Revertir el pago si ya se procesó
     if (paymentId) {
       try {
         await compensateSaga(paymentId, 0, req.body.producto_id, req.body.cantidad);
       } catch (compensateError) {
-        console.error('Error al revertir el pago:', compensateError.message);
+        if (compensateError instanceof Error) {
+          console.error('Error al revertir el pago:', compensateError.message);
+        } else {
+          console.error('Error al revertir el pago:', compensateError);
+        }
       }
     }
 
@@ -106,7 +116,11 @@ export const realizarTransaccion = async (req: Request, res: Response) => {
       try {
         await compensateSaga(0, purchaseId, req.body.producto_id, req.body.cantidad);
       } catch (compensateError) {
-        console.error('Error al revertir la compra:', compensateError.message);
+        if (compensateError instanceof Error) {
+          console.error('Error al revertir la compra:', compensateError.message);
+        } else {
+          console.error('Error al revertir la compra:', compensateError);
+        }
       }
     }
 
